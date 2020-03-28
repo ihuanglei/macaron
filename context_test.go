@@ -20,11 +20,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/Unknwon/com"
+	"github.com/unknwon/com"
 
 	. "github.com/smartystreets/goconvey/convey"
 )
@@ -171,10 +173,27 @@ func Test_Context(t *testing.T) {
 			So(resp.Body.String(), ShouldEqual, "user user 1 13 1.24 ")
 		})
 
+		Convey("Get all URL paramaters", func() {
+			m.Get("/:arg/:param/:flag", func(ctx *Context) string {
+				kvs := make([]string, 0, len(ctx.AllParams()))
+				for k, v := range ctx.AllParams() {
+					kvs = append(kvs, k+"="+v)
+				}
+				sort.Strings(kvs)
+				return strings.Join(kvs, ",")
+			})
+
+			resp := httptest.NewRecorder()
+			req, err := http.NewRequest("GET", "/1/2/3", nil)
+			So(err, ShouldBeNil)
+			m.ServeHTTP(resp, req)
+			So(resp.Body.String(), ShouldEqual, ":arg=1,:flag=3,:param=2")
+		})
+
 		Convey("Get file", func() {
 			m.Post("/getfile", func(ctx *Context) {
 				ctx.Query("")
-				ctx.GetFile("hi")
+				_, _, _ = ctx.GetFile("hi")
 			})
 
 			resp := httptest.NewRecorder()
@@ -293,7 +312,12 @@ func Test_Context(t *testing.T) {
 			req, err = http.NewRequest("GET", "/file3", nil)
 			So(err, ShouldBeNil)
 			m.ServeHTTP(resp, req)
-			So(resp.Body.String(), ShouldEqual, "open 404.tmpl: no such file or directory\n")
+
+			if runtime.GOOS == "windows" {
+				So(resp.Body.String(), ShouldEqual, "open 404.tmpl: The system cannot find the file specified.\n")
+			} else {
+				So(resp.Body.String(), ShouldEqual, "open 404.tmpl: no such file or directory\n")
+			}
 			So(resp.Code, ShouldEqual, 500)
 		})
 
@@ -363,7 +387,7 @@ func Test_Context_Redirect(t *testing.T) {
 		ctx.Redirect("two")
 
 		So(resp.Code, ShouldEqual, http.StatusFound)
-		So(resp.HeaderMap["Location"][0], ShouldEqual, "/path/two")
+		So(resp.Result().Header["Location"][0], ShouldEqual, "/path/two")
 	})
 
 	Convey("Context with custom redirect", t, func() {
@@ -382,6 +406,6 @@ func Test_Context_Redirect(t *testing.T) {
 		ctx.Redirect("two", 307)
 
 		So(resp.Code, ShouldEqual, http.StatusTemporaryRedirect)
-		So(resp.HeaderMap["Location"][0], ShouldEqual, "/path/two")
+		So(resp.Result().Header["Location"][0], ShouldEqual, "/path/two")
 	})
 }
